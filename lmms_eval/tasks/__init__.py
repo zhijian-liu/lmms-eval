@@ -13,7 +13,40 @@ from lmms_eval.api.group import ConfigurableGroup, GroupConfig
 from lmms_eval.api.task import ConfigurableTask, Task
 from lmms_eval.evaluator_utils import get_subtask_list
 
-GROUP_ONLY_KEYS = list(GroupConfig().to_dict().keys())
+# from lmms_eval import prompts
+from lmms_eval.api.task import TaskConfig, Task, ConfigurableTask
+from lmms_eval.api.registry import (
+    register_task,
+    register_group,
+    TASK_REGISTRY,
+    GROUP_REGISTRY,
+    ALL_TASKS,
+    TASK_INITIALIZED,
+)
+
+from loguru import logger
+
+eval_logger = logger
+
+
+def register_configurable_task(config: Dict[str, str]) -> int:
+    SubClass = type(
+        config["task"] + "ConfigurableTask",
+        (ConfigurableTask,),
+        {"CONFIG": TaskConfig(**config)},
+    )
+
+    if "task" in config:
+        task_name = "{}".format(config["task"])
+        register_task(task_name)(SubClass)
+
+    if "group" in config:
+        if config["group"] == config["task"]:
+            raise ValueError("task and group name cannot be the same")
+        elif type(config["group"]) == str:
+            group_name = [config["group"]]
+        else:
+            group_name = config["group"]
 
 
 class TaskManager:
@@ -508,7 +541,17 @@ def _check_duplicates(task_dict: dict) -> List[str]:
     for key, value in task_dict.items():
         subtask_names.extend(value)
 
-    duplicate_tasks = {task_name for task_name in subtask_names if subtask_names.count(task_name) > 1}
+def initialize_tasks(verbosity="INFO"):
+    logger.remove()
+    eval_logger.add(sys.stdout, colorize=True, level=verbosity)
+    global TASK_INITIALIZED
+    if TASK_INITIALIZED:
+        eval_logger.info("Tasks already initialized, skipping re-initialization.")
+        return
+    # eval_logger.add(sys.stderr, level=verbosity)
+    task_dir = os.path.dirname(os.path.abspath(__file__)) + "/"
+    include_path(task_dir)
+    TASK_INITIALIZED = True
 
     # locate the potentially problematic groups that seem to 'compete' for constituent subtasks
     competing_groups = [group for group in task_dict.keys() if len(set(task_dict[group]).intersection(duplicate_tasks)) > 0]
