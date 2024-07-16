@@ -4,6 +4,8 @@ import sys
 
 import hf_transfer
 from loguru import logger
+import sys
+import hf_transfer
 
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
@@ -24,9 +26,7 @@ AVAILABLE_MODELS = {
     "llama_vid": "LLaMAVid",
     "llava": "Llava",
     "llava_hf": "LlavaHf",
-    "llava_onevision": "Llava_OneVision",
-    "llava_sglang": "LlavaSglang",
-    "llava_vid": "LlavaVid",
+    "llava_onevision": "LlavaOneVision",
     "longva": "LongVA",
     "mantis": "Mantis",
     "minicpm_v": "MiniCPM_V",
@@ -51,12 +51,9 @@ def get_model(model_name):
 
     model_class = AVAILABLE_MODELS[model_name]
     try:
-        module = __import__(f"lmms_eval.models.{model_name}", fromlist=[model_class])
-        return getattr(module, model_class)
+        exec(f"from .{model_name} import {model_class}")
     except Exception as e:
-        logger.error(f"Failed to import {model_class} from {model_name}: {e}")
-        raise
-
+        logger.debug(f"Failed to import {model_class} from {model_name}: {e}")
 
 if os.environ.get("LMMS_EVAL_PLUGINS", None):
     # Allow specifying other packages to import models from

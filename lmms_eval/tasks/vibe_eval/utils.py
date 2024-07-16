@@ -4,17 +4,11 @@ from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
 
 import yaml
-
-try:
-    from reka import ChatMessage
-    from reka.client import Reka
-except ImportError:
-    eval_logger.warning("Reka is not installed, please install it by `pip install reka-api`")
-
-from loguru import logger as eval_logger
+import re
+import os
+from copy import deepcopy
 
 try:
     from reka import ChatMessage
