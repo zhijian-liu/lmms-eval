@@ -40,7 +40,6 @@ AVAILABLE_MODELS = {
     "videoChatGPT": "VideoChatGPT",
     "video_llava": "VideoLLaVA",
     "vila": "VILA",
-    "xcomposer2_4KHD": "XComposer2_4KHD",
     "xcomposer2d5": "XComposer2D5",
 }
 
