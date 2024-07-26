@@ -1,22 +1,16 @@
-import json
 import os
-from abc import ABC, abstractmethod
-from typing import List
-
+import json
+import openai
 import anthropic
 import google.generativeai as genai
-import openai
-from live_bench.data_generator.qa_generator import QAData
-from live_bench.data_generator.utils.claude import (
-    claude_generate_response,
-    format_claude_images,
-)
-from live_bench.data_generator.utils.gemini import gemini_generate_response
-from live_bench.data_generator.utils.gpt4v import (
-    format_gpt4v_images,
-    gpt4v_generate_response,
-)
 from PIL import Image
+from typing import List
+from abc import ABC, abstractmethod
+from live_bench.data_generator.qa_generator import QAData
+from live_bench.data_generator.utils.gpt4v import format_gpt4v_images, gpt4v_generate_response
+from live_bench.data_generator.utils.claude import format_claude_images, claude_generate_response
+from live_bench.data_generator.utils.gemini import gemini_generate_response
+
 
 REJECT_TO_ANSWER = "Reject to answer"
 

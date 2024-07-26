@@ -166,8 +166,8 @@ def livebench_process_results_for_name(doc, results, model, eval_name):
     if subtask not in SUBTASKS:
         subtask = "further insights"
     if not results or results[0] == "":
-        return {"gpt4_eval_score": {"rating": 0, "explanation": "No response", "model_name": "N/A", "subtask": subtask}}
-    rating, explanation, model_name = get_chat_response(base64_images=base64_images, question=doc["question"], ground_truth_answer=doc["answer"], answer=results[0] if results else "", criteria=criteria)
+        return {eval_name: {"rating": 0, "explanation": "No response", "model_name": "N/A", "subtask": subtask}}
+    rating, explanation, model_name = get_chat_response(gpt_model_name=model, base64_images=base64_images, question=doc["question"], ground_truth_answer=doc["answer"], answer=results[0] if results else "", criteria=criteria)
     if rating >= 0:
         return {eval_name: {"rating": rating, "explanation": explanation, "model_name": model_name, "subtask": subtask, "id": doc["id"]}}
     else:

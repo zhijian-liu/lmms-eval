@@ -1,12 +1,9 @@
 import base64
-import io
+from live_bench.data_generator.response import Response
+import anthropic
 import logging
 from time import sleep
-from typing import List, Union
-
-import anthropic
-from live_bench.data_generator.response import Response
-from PIL import Image
+from typing import Union, List
 
 logger = logging.getLogger("lmms-eval")
 
