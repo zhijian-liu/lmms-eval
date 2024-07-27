@@ -1,5 +1,6 @@
-import collections
-import inspect
+import os
+import time
+import random
 import itertools
 import json
 import os
@@ -518,19 +519,71 @@ def evaluate(
     if WORLD_SIZE > 1:
         # if multigpu, then gather data across all ranks to rank 0
         # first gather logged samples across all ranks
-        for task_output in eval_tasks:
-            if log_samples:
-                # for task_name, task_samples in list(samples.items()):
-                full_samples = [None] * WORLD_SIZE if RANK == 0 else None
-                per_rank_samples = []
-                for sample in task_output.logged_samples:
-                    per_rank_samples.append(sample)
+        for task_name, task_samples in list(samples.items()):
+            full_samples = [None] * lm.world_size
+            torch.distributed.all_gather_object(full_samples, task_samples)
+            samples[task_name] = list(itertools.chain.from_iterable(full_samples))
+        # then collect metrics across all ranks
+        vals_torch = collections.defaultdict(list)
+        for (task_name, key, metric), items in vals.items():
+            numitem = 0
+            if type(items[0]) == tuple:
+                numitem = len(items[0])
 
-                torch.distributed.gather_object(
-                    obj=per_rank_samples,
-                    object_gather_list=full_samples,
-                    dst=0,
-                )
+            if isinstance(items[0], (str, list, dict)):
+                # handle the string case
+                gathered_items = [None] * lm.accelerator.num_processes
+                torch.distributed.all_gather_object(gathered_items, items)
+
+                gathered_item = list(itertools.chain.from_iterable(gathered_items))
+            else:
+                # distributed gather requires all ranks to have same dimensions
+                # so we pad out with float32 min value
+                pad_value = torch.finfo(torch.float32).min
+                metrics_tensor = torch.tensor(items, device=lm.device)
+
+                original_dtype = metrics_tensor.dtype  # store original dtype
+                torch_device_tensor = lm.accelerator.pad_across_processes(metrics_tensor.to(torch.float32), pad_index=pad_value)
+                gathered_item = lm.accelerator.gather(torch_device_tensor)
+
+                if numitem > 0:
+                    gathered_filtered = gathered_item[gathered_item[:, 0] != pad_value]
+                else:
+                    gathered_filtered = gathered_item[gathered_item != pad_value]
+
+                gathered_item = gathered_filtered.to(original_dtype).cpu().detach().numpy().tolist()
+                # reconvert if we were passed a tuple of values
+                if numitem > 0:
+                    gathered_item = [tuple(g) for g in gathered_item]
+
+            if lm.rank == 0:
+                vals_torch[(task_name, key, metric)] = gathered_item
+
+        vals = vals_torch
+        # Ensure all ranks wait for rank 0 to finish aggregation
+        torch.distributed.barrier()
+
+    # Synchronize processes with a temp file in case the evluation metric requires gpus
+    # TODO: fix barriers' taking up gpu computation
+    os.makedirs(cli_args.output_path, exist_ok=True)
+    if os.path.exists(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt"):
+        os.remove(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt")
+
+    if lm.rank == 0:
+        ### Get task ordering for correct sample-wide aggregation
+        group_to_task = {}
+        for group in task_hierarchy.keys():
+            if group not in task_order:
+                task_order[group] = 0
+
+            if len(task_hierarchy[group]) > 0:
+                group_to_task[group] = task_hierarchy[group].copy()
+
+            for task in task_hierarchy[group]:
+                if task in task_order:
+                    task_order[task] += 1
+                else:
+                    task_order[task] = 1 + task_order[group]
 
                 if RANK == 0:
                     task_output.logged_samples = list(itertools.chain.from_iterable(full_samples))
@@ -607,16 +660,9 @@ def evaluate(
     else:
         results_dict = None
 
-    if hasattr(lm, "accelerator"):
-        lm.accelerator.wait_for_everyone()
+    with open(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt", "w") as f:
+        f.write(f"rank {int(os.environ.get('RANK', 0))} eval done")
+    while len([file for file in os.listdir(cli_args.output_path) if file.endswith("metric_eval_done.txt")]) < lm._world_size:
+        time.sleep(1)
+
     return results_dict
-
-
-def request_caching_arg_to_dict(cache_requests: str) -> dict:
-    request_caching_args = {
-        "cache_requests": cache_requests in {"true", "refresh"},
-        "rewrite_requests_cache": cache_requests == "refresh",
-        "delete_requests_cache": cache_requests == "delete",
-    }
-
-    return request_caching_args

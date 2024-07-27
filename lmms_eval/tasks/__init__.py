@@ -522,9 +522,41 @@ def get_task_name_from_config(task_config: Dict[str, str]) -> str:
         return "{dataset_path}".format(**task_config)
 
 
-def get_task_name_from_object(task_object):
-    if hasattr(task_object, "config"):
-        return task_object._config["task"]
+def include_task_folder(task_dir: str, register_task: bool = True) -> None:
+    """
+    Calling this function
+    """
+    for root, subdirs, file_list in os.walk(task_dir):
+        # if (subdirs == [] or subdirs == ["__pycache__"]) and (len(file_list) > 0):
+        for f in file_list:
+            # if "detail" in f:
+            #
+            # if "vatex" in f:
+            #     print("a")
+            if f.endswith(".yaml"):
+                yaml_path = os.path.join(root, f)
+                try:
+                    config = utils.load_yaml_config(yaml_path)
+
+                    if "task" not in config:
+                        continue
+
+                    if register_task:
+                        if type(config["task"]) == str:
+                            register_configurable_task(config)
+                    else:
+                        if type(config["task"]) == list:
+                            register_configurable_group(config)
+
+                # Log this silently and show it only when
+                # the user defines the appropriate verbosity.
+                except ModuleNotFoundError as e:
+                    eval_logger.debug(f"{yaml_path}: {e}. Config will not be added to registry.")
+                except Exception as error:
+                    import traceback
+
+                    eval_logger.debug(f"Failed to load config in {yaml_path}. Config will not be added to registry\n" f"Error: {error}\n" f"Traceback: {traceback.format_exc()}")
+    return 0
 
     # TODO: scrap this
     # this gives a mechanism for non-registered tasks to have a custom name anyways when reporting
