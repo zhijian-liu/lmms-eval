@@ -258,7 +258,8 @@ pip install protobuf==3.20
 
 ```bash
 git clone https://github.com/EvolvingLMMs-Lab/sglang.git
-cd sglang
+cd sglang;
+git checkout dev/onevision;
 pip install -e "python[srt]"
 ```
 
