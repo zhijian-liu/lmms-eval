@@ -139,6 +139,7 @@ def parse_multi_choice_response(response, all_choices, index2ans):
                 index_ans = False  # it's content ans.
 
     if len(candidates) == 0:  # still not get answer, randomly choose one.
+        # import pdb; pdb.set_trace()
         pred_index = random.choice(all_choices)
     elif len(candidates) > 1:
         # candidates = list(set(candidates))

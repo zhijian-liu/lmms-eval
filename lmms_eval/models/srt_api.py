@@ -1,50 +1,35 @@
-import asyncio
-import base64
-import json
-import os
-import time
-from copy import deepcopy
-from io import BytesIO
-from multiprocessing import cpu_count
-from typing import List, Tuple
-
-import numpy as np
 from accelerate import Accelerator, DistributedType
+import base64
+from io import BytesIO
+from copy import deepcopy
 from decord import VideoReader, cpu
-from loguru import logger as eval_logger
-from openai import AsyncOpenAI
+import numpy as np
+from openai import OpenAI
 from PIL import Image
-from sglang.srt.utils import kill_child_process
-from sglang.test.test_utils import (
-    DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
-    popen_launch_server,
-)
+import os
+import json
+from typing import List, Tuple
 from tqdm import tqdm
+import time
 
 from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
-
-NUM_SECONDS_TO_SLEEP = 5
 
 
 @register_model("srt_api")
 class SRT_API(lmms):
     def __init__(
         self,
-        api_key: str = "sk-123456",
-        model_version: str = "lmms-lab/llava-onevision-qwen2-72b-ov",
+        api_key: str = "EMPTY",
+        model_version: str = "default",
         modality: str = "video",
         host: str = "127.0.0.1",
         port: int = 30000,
-        max_frames_num: int = 32,
-        timeout: int = 60,
-        chat_template: str = "chatml-llava",
-        tp: int = 8,
-        chunked_prefill_size: int = 16384,
+        max_frames_num: int = 10,
+        timeout: int = 120,
         continual_mode: bool = False,
         response_persistent_folder: str = None,
-        num_processes: int = cpu_count() // 2,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -74,24 +59,7 @@ class SRT_API(lmms):
                 self.cache_mode = "start"
 
         accelerator = Accelerator()
-        self.model = model_version
-        self.base_url = f"http://{host}:{port}"
-        self.api_key = api_key
-        self.chat_template = chat_template
-        other_args = []
-        other_args.extend(["--chunked-prefill-size", str(chunked_prefill_size)])
-        other_args.extend(["--tensor-parallel-size", str(tp)])
-        other_args.extend(["--chat-template", self.chat_template])
-        self.process = popen_launch_server(
-            self.model,
-            self.base_url,
-            timeout=DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
-            api_key=self.api_key,
-            other_args=other_args,
-        )
-        self.base_url += "/v1"
-        self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
-        self.num_processes = num_processes
+        self.client = OpenAI(api_key="EMPTY", base_url="http://127.0.0.1:30000/v1")
         # assert self.batch_size_per_gpu == 1, "Llava currently does not support batched generation. See https://github.com/haotian-liu/LLaVA/issues/754. HF Llava also has this issue."
         if accelerator.num_processes > 1:
             assert accelerator.distributed_type in [DistributedType.FSDP, DistributedType.MULTI_GPU, DistributedType.DEEPSPEED], "Unsupported distributed type provided. Only DDP and FSDP are supported."
@@ -117,28 +85,11 @@ class SRT_API(lmms):
 
     # Function to encode the video
     def encode_video(self, video_path, for_get_frames_num):
-        try:
-            vr = VideoReader(video_path, ctx=cpu(0), num_threads=1)
-            total_frame_num = len(vr)
-            uniform_sampled_frames = np.linspace(0, total_frame_num - 1, for_get_frames_num, dtype=int)
-            frame_idx = uniform_sampled_frames.tolist()
-            frames = vr.get_batch(frame_idx).asnumpy()
-        except:
-            import av
-
-            container = av.open(video_path)
-
-            frames = []
-            # https://github.com/PyAV-Org/PyAV/issues/1269
-            # https://www.cnblogs.com/beyond-tester/p/17641872.html
-            # context = CodecContext.create("libvpx-vp9", "r")
-            for packet in container.demux(video=0):
-                for frame in packet.decode():
-                    frames.append(frame)
-            total_frames = len(frames)
-            sampled_frm = min(total_frames, for_get_frames_num)
-            indices = np.linspace(0, total_frames - 1, sampled_frm, dtype=int)
-            frames = [frames[i] for i in indices]
+        vr = VideoReader(video_path, ctx=cpu(0))
+        total_frame_num = len(vr)
+        uniform_sampled_frames = np.linspace(0, total_frame_num - 1, for_get_frames_num, dtype=int)
+        frame_idx = uniform_sampled_frames.tolist()
+        frames = vr.get_batch(frame_idx).asnumpy()
 
         base64_frames = []
         for frame in frames:
@@ -158,82 +109,79 @@ class SRT_API(lmms):
                 new_list.append(j)
         return new_list
 
-    async def generate(self, request):
-        contexts, gen_kwargs, doc_to_visual, doc_id, task, split = request.args
-        visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
-        visuals = self.flatten(visuals)
-        imgs = []  # multiple images or frames for video
-        for visual in visuals:
-            if self.modality == "image":
-                img = self.encode_image(visual)
-                imgs.append(img)
-            elif self.modality == "video":
-                try:
-                    frames = self.encode_video(visual, self.max_frames_num)
-                    imgs.extend(frames)
-                except Exception as e:
-                    eval_logger.error(f"Exception : {e} \n When loading video {visual}")
-                    imgs = None
-                    break
-
-        # Handling video decode error
-        # If we can't even load using pyav, then we will skip
-        if imgs is None:
-            resps = ""
-            return resps
-
-        messages = []
-
-        # put the images in the first place
-        content = []
-        for img in imgs:
-            content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}})
-
-        content.append({"type": "text", "text": contexts})
-        messages.append({"role": "user", "content": content})
-
-        if "max_new_tokens" not in gen_kwargs:
-            gen_kwargs["max_new_tokens"] = 1024
-
-        if "temperature" not in gen_kwargs:
-            gen_kwargs["temperature"] = 0
-
-        for attempt in range(5):
-            try:
-                response = await self.client.chat.completions.create(model=self.model_version, messages=messages, temperature=gen_kwargs["temperature"], max_tokens=gen_kwargs["max_new_tokens"], timeout=self.timeout)
-                response_text = response.choices[0].message.content.strip()
-                break  # If successful, break out of the loop
-
-            except Exception as e:
-                eval_logger.info(f"Attempt {attempt + 1} failed with error: {str(e)}.")
-                if attempt < 4:
-                    time.sleep(NUM_SECONDS_TO_SLEEP)
-                else:  # If this was the last attempt, log and return empty string
-                    eval_logger.error(f"All 5 attempts failed. Last error message: {str(e)}.")
-                    response_text = ""
-
-        return response_text
-
     def generate_until(self, requests) -> List[str]:
         res = []
         pbar = tqdm(total=len(requests), disable=(self.rank != 0), desc="Model Responding")
 
-        async def run(requests):
-            sem = asyncio.Semaphore(self.num_processes)
+        for contexts, gen_kwargs, doc_to_visual, doc_id, task, split in [reg.args for reg in requests]:
+            if self.continual_mode is True and self.cache_mode == "resume":
+                doc_uuid = f"{task}___{split}___{doc_id}"
+                if doc_uuid in self.response_cache:
+                    response_text = self.response_cache[doc_uuid]
+                    if response_text:
+                        res.append(response_text)
+                        pbar.update(1)
+                        continue
 
-            async def _process(request):
-                async with sem:
-                    return await self.generate(request)
+            visuals = [doc_to_visual(self.task_dict[task][split][doc_id])]
+            visuals = self.flatten(visuals)
+            imgs = []  # multiple images or frames for video
+            for visual in visuals:
+                if self.modality == "image":
+                    img = self.encode_image(visual)
+                    imgs.append(img)
+                elif self.modality == "video":
+                    frames = self.encode_video(visual, self.max_frames_num)
+                    imgs.extend(frames)
 
-            tasks = [asyncio.create_task(_process(request)) for request in requests]
-            for completed_task in asyncio.as_completed(tasks):
-                result = await completed_task
-                res.append(result)
-                pbar.update(1)
+            messages = []
+            if self.image_token not in contexts:  # single image format
+                content = []
+                for img in imgs:
+                    content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}})
 
-        asyncio.run(run(requests))
-        kill_child_process(self.process.pid)
+                content.append({"type": "text", "text": contexts})
+                messages.append({"role": "user", "content": content})
+            else:  # interleaved format
+                contexts = contexts.split(self.image_token)
+                for idx, img in enumerate(imgs):
+                    content = [
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}},
+                        {"type": "text", "text": contexts[idx]},
+                    ]
+                    messages.append({"role": "user", "content": content})
+                messages.append({"role": "user", "content": [{"type": "text", "text": contexts[-1]}]})
 
+            if "max_new_tokens" not in gen_kwargs:
+                gen_kwargs["max_new_tokens"] = 1024
+
+            if "temperature" not in gen_kwargs:
+                gen_kwargs["temperature"] = 0
+
+            for attempt in range(5):
+                try:
+                    response = self.client.chat.completions.create(model=self.model_version, messages=messages, temperature=gen_kwargs["temperature"], max_tokens=gen_kwargs["max_new_tokens"], timeout=self.timeout)
+                    response_text = response.choices[0].message.content.strip()
+                    break  # If successful, break out of the loop
+
+                except Exception as e:
+                    eval_logger.info(f"Attempt {attempt + 1} failed with error: {str(e)}.")
+                    if attempt < 4:
+                        time.sleep(NUM_SECONDS_TO_SLEEP)
+                    else:  # If this was the last attempt, log and return empty string
+                        eval_logger.error(f"All 5 attempts failed. Last error message: {str(e)}.")
+                        response_text = ""
+
+            res.append(response_text)
+            pbar.update(1)
+
+            if self.continual_mode is True:  # Cache the response
+                doc_uuid = f"{task}___{split}___{doc_id}"
+                self.response_cache[doc_uuid] = response_text
+                with open(self.response_persistent_file, "w") as f:
+                    json.dump(self.response_cache, f)
+
+        pbar.close()
         return res
 
     def loglikelihood(self, requests: List[Instance]) -> List[Tuple[float, bool]]:

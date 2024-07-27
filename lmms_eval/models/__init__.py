@@ -31,6 +31,7 @@ AVAILABLE_MODELS = {
     "tinyllava": "TinyLlava",
     "llava_onevision": "LlavaOneVision",
     "llava_hf": "LlavaHf",
+    "srt_api": "SRT_API",
     "longva": "LongVA",
     "mantis": "Mantis",
     "minicpm_v": "MiniCPM_V",
