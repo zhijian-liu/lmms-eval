@@ -476,8 +476,32 @@ def evaluate(
         for instances in instances_by_doc_id.values():
             instances.sort(key=lambda x: x.idx)
         # iterate over different filters used
-        for filter_key in task.instances[0].filtered_resps.keys():
-            doc_iterator = task.doc_iterator(rank=RANK, limit=limit, world_size=WORLD_SIZE)
+        for key in task.instances[0].filtered_resps.keys():
+            # hack: remove image columns to speed avoid loading images and speed up postprocessing
+            # reason: doc_iterator will actually load image if it's in the doc.
+            docs = task.test_docs() if task.has_test_docs() else task.validation_docs()
+            if not task.config["process_results_use_image"]:
+                remove_cols = []
+                features = docs.features
+                # If it is an Image instance or a Sequence of Image instance. Remove it
+                for feature in features:
+                    if isinstance(features[feature], Image):
+                        remove_cols.append(feature)
+                    elif isinstance(features[feature], Sequence) and isinstance(features[feature].feature, Image):
+                        remove_cols.append(feature)
+                if remove_cols:
+                    docs = docs.remove_columns(remove_cols)
+
+            ####################### Processing with Full Docs Mode #######################
+            full_docs = task.config["full_docs"]
+
+            doc_iterator = itertools.islice(enumerate(docs), lm.rank, limit, lm.world_size)
+            # Instead of converting the iterator to a list, use `itertools.tee` to create a parallel iterator for counting
+            # doc_iterator, doc_iterator_for_counting = itertools.tee(doc_iterator)
+            # Don't use above one, this would crash if doc_iterator_for_counting contains too many objects and very slow
+            doc_iterator_for_counting = itertools.islice(range(len(task.test_docs())), lm.rank, limit, lm.world_size) if task.has_test_docs() else itertools.islice(range(len(task.validation_docs())), lm.rank, limit, lm.world_size)
+            total_docs = sum(1 for _ in doc_iterator_for_counting)
+            pbar = tqdm(total=total_docs, desc=f"Postprocessing", disable=(lm.rank != 0))
             for doc_id, doc in doc_iterator:
                 requests = instances_by_doc_id[doc_id]
                 metrics = task.process_results(doc, [req.filtered_resps[filter_key] for req in requests])
