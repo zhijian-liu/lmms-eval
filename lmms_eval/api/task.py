@@ -4,9 +4,10 @@ import inspect
 import itertools
 import json
 import os
-import random
 import re
+import random
 import shutil
+import inspect
 import subprocess
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -398,8 +399,7 @@ class Task(abc.ABC):
 
             # TODO: we should override self.config.repeats if doing greedy gen so users don't waste time+compute
             per_task_metadata = {"task": self.config["task"], "doc_id": doc_id, "repeats": self.config.repeats}
-
-            if self.config.metadata and type(self.config.metadata) == dict:  # TODO: temporary fix for metadata loading, ignore the list of dict type.
+            if self.config.metadata:
                 per_task_metadata.update(self.config.metadata)
 
             inst = self.construct_requests(doc_id=doc_id, ctx=fewshot_ctx, metadata=per_task_metadata, split=split)
@@ -875,6 +875,7 @@ class ConfigurableTask(Task):
                     def unzip_video_data(zip_file):
                         import os
                         import zipfile
+                        import os
 
                         with zipfile.ZipFile(zip_file, "r") as zip_ref:
                             for file_info in zip_ref.infolist():
@@ -1167,8 +1168,7 @@ class ConfigurableTask(Task):
                 )
             )
         else:
-            # eval_logger.warning("Note that doc_to_visual was called but not set in config. Please check if this is a text-only task.")
-            return self.config.doc_to_visual
+            raise TypeError
 
     def doc_to_choice(self, doc: Any) -> List[str]:
         if self.config.doc_to_choice is None:
