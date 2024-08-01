@@ -1,14 +1,14 @@
-import io
-import logging
-import os
+from selenium import webdriver
+from PIL import Image
+from live_bench.websites import Website
+from live_bench.screen_shoter.screen import ScreenImage
+from typing import List
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List
-
-from live_bench.screen_shoter.screen import ScreenImage
-from live_bench.websites import Website
 from PIL import Image
-from selenium import webdriver
+import os
+import io
+import logging
 
 logger = logging.getLogger("lmms-eval")
 

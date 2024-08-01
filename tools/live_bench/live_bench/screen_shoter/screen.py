@@ -1,9 +1,10 @@
-import base64
 import io
+import base64
+
+from PIL import Image
 from typing import List, Tuple
 
 from live_bench.websites import Website
-from PIL import Image
 
 
 def image_to_base64(image: Image.Image) -> str:

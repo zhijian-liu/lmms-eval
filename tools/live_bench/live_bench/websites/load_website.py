@@ -1,8 +1,7 @@
+import yaml
 import os
 from random import sample
-
-import yaml
-from live_bench.websites.website import DefaultWebsite, HumanScreenShotWebsite, Website
+from live_bench.websites.website import Website, DefaultWebsite, HumanScreenShotWebsite
 
 
 def get_website(website_dict):

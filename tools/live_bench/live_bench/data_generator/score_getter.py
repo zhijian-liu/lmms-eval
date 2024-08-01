@@ -1,22 +1,15 @@
-import json
 import os
+import json
 import random
+import openai
+import anthropic
 from abc import ABC, abstractmethod
 from typing import List
-
-import anthropic
-import openai
-from live_bench.data_generator.qa_generator import Response
-from live_bench.data_generator.utils.claude import (
-    claude_generate_response,
-    format_claude_images,
-)
-from live_bench.data_generator.utils.gpt4v import (
-    format_gpt4v_images,
-    gpt4v_generate_response,
-)
-from live_bench.screen_shoter import ScreenImage
 from PIL import Image
+from live_bench.screen_shoter import ScreenImage
+from live_bench.data_generator.qa_generator import Response
+from live_bench.data_generator.utils.gpt4v import format_gpt4v_images, gpt4v_generate_response
+from live_bench.data_generator.utils.claude import format_claude_images, claude_generate_response
 
 
 class Score(object):

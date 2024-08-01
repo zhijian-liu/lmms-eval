@@ -1,3 +1,5 @@
+from PIL import Image
+import io
 import base64
 from live_bench.data_generator.response import Response
 import anthropic
