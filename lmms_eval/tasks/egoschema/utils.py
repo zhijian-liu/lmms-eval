@@ -7,9 +7,8 @@ from pathlib import Path
 
 import numpy as np
 import yaml
-from decord import VideoReader, cpu
-
-import lmms_eval.tasks._task_utils.file_utils as file_utils
+import random
+from pathlib import Path
 
 with open(Path(__file__).parent / "_default_template_yaml", "r") as f:
     raw_data = f.readlines()
@@ -139,7 +138,6 @@ def parse_multi_choice_response(response, all_choices, index2ans):
                 index_ans = False  # it's content ans.
 
     if len(candidates) == 0:  # still not get answer, randomly choose one.
-        # import pdb; pdb.set_trace()
         pred_index = random.choice(all_choices)
     elif len(candidates) > 1:
         # candidates = list(set(candidates))
