@@ -1,16 +1,19 @@
-import ast
-import json
-import os
-import random
-import re
 from collections import defaultdict
-from pathlib import Path
-
+import re
+import ast
+import random
 import numpy as np
+import os
+import json
+from pathlib import Path
 import yaml
-from loguru import logger as eval_logger
 
 from lmms_eval.tasks._task_utils.file_utils import generate_submission_file
+
+from loguru import logger as eval_logger
+
+MULTI_CHOICE_PROMPT = "Answer with the option's letter from the given choices directly."
+OPEN_ENDED_PROMPT = "Answer the question using a single word or phrase."
 
 with open(Path(__file__).parent / "_default_template_yaml", "r") as f:
     raw_data = f.readlines()
@@ -38,21 +41,22 @@ def parse_options(options):
     return choices_str
 
 
-def construct_prompt(doc, post_prompt="Answer with the option letter from the given choices directly."):
+def construct_prompt(doc):
     question = doc["question"]
     # Weirdly, data["options"] is a string in MMMU Huggingface dataset
     parsed_options = parse_options(ast.literal_eval(doc["options"]))
     # parsed_options already prepends a newline so no need to add space here
-    question = f"{question}\n{parsed_options}\n\n{post_prompt}"
+    question = f"{question}\n{parsed_options}\n\n{MULTI_CHOICE_PROMPT}"
     return question
 
 
-def mmmu_pro_doc_to_text(doc, lmms_eval_specific_kwargs=None):
-    post_prompt = lmms_eval_specific_kwargs["post_prompt"]
+def mmmu_pro_doc_to_text(doc):
     if "question" in doc and "options" in doc:  # original operation
-        question = construct_prompt(doc, post_prompt)
+        question = construct_prompt(doc)
         if config["metadata"]["interleaved_format"]:
             question = replace_images_tokens(question)
+    else:  # vision-only operation
+        question = "Please answer the question in this image with the option's letter from the given choices directly."
     return question
 
 
