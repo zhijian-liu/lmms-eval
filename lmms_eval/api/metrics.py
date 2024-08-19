@@ -2,17 +2,17 @@
 import logging
 import math
 import random
-import re
-import string
 from collections.abc import Iterable
 from typing import List
 
+import evaluate
 import numpy as np
 import sacrebleu
+import sklearn.metrics
+import torch
+from loguru import logger as eval_logger
 
 from lmms_eval.api.registry import register_aggregation, register_metric
-
-eval_logger = logging.getLogger("lm-eval")
 
 
 # Register Aggregations First

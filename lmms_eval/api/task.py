@@ -4,10 +4,9 @@ import inspect
 import itertools
 import json
 import os
-import re
 import random
+import re
 import shutil
-import inspect
 import subprocess
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -38,16 +37,11 @@ from tqdm import tqdm
 from lmms_eval import utils
 from lmms_eval.api import samplers
 from lmms_eval.api.instance import Instance
-from lmms_eval.api.registry import (
-    AGGREGATION_REGISTRY,
-    DEFAULT_METRIC_REGISTRY,
-    METRIC_REGISTRY,
-    OUTPUT_TYPE_REGISTRY,
-    get_aggregation,
-    get_metric,
-    get_metric_aggregation,
-    is_higher_better,
-)
+from lmms_eval.api.registry import (AGGREGATION_REGISTRY,
+                                    DEFAULT_METRIC_REGISTRY, METRIC_REGISTRY,
+                                    OUTPUT_TYPE_REGISTRY, get_aggregation,
+                                    get_metric, get_metric_aggregation,
+                                    is_higher_better)
 from lmms_eval.filters import build_filter_ensemble
 
 # HuggingfaceM4/NoCaps contains truncated image in test split
@@ -876,7 +870,6 @@ class ConfigurableTask(Task):
                     def unzip_video_data(zip_file):
                         import os
                         import zipfile
-                        import os
 
                         with zipfile.ZipFile(zip_file, "r") as zip_ref:
                             for file_info in zip_ref.infolist():

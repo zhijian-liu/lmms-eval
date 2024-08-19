@@ -6,7 +6,6 @@ import os
 import sys
 import traceback
 import warnings
-from functools import partial
 
 import numpy as np
 import yaml
@@ -23,54 +22,8 @@ from loguru import logger as eval_logger
 
 from lmms_eval import evaluator, utils
 from lmms_eval.api.registry import ALL_TASKS
-from lmms_eval.evaluator import request_caching_arg_to_dict
-from lmms_eval.loggers import EvaluationTracker, WandbLogger
-
-# from lmms_eval.logging_utils import WandbLogger
-from lmms_eval.tasks import TaskManager
-from lmms_eval.utils import (
-    handle_non_serializable,
-    make_table,
-    simple_parse_args_string,
-)
-
-
-def _int_or_none_list_arg_type(min_len: int, max_len: int, defaults: str, value: str, split_char: str = ","):
-    def parse_value(item):
-        item = item.strip().lower()
-        if item == "none":
-            return None
-        try:
-            return int(item)
-        except ValueError:
-            raise argparse.ArgumentTypeError(f"{item} is not an integer or None")
-
-    items = [parse_value(v) for v in value.split(split_char)]
-    num_items = len(items)
-
-    if num_items == 1:
-        # Makes downstream handling the same for single and multiple values
-        items = items * max_len
-    elif num_items < min_len or num_items > max_len:
-        raise argparse.ArgumentTypeError(f"Argument requires {max_len} integers or None, separated by '{split_char}'")
-    elif num_items != max_len:
-        logging.warning(f"Argument requires {max_len} integers or None, separated by '{split_char}'. " "Missing values will be filled with defaults.")
-        default_items = [parse_value(v) for v in defaults.split(split_char)]
-        items.extend(default_items[num_items:])  # extend items list with missing defaults
-
-    return items
-
-
-def check_argument_types(parser: argparse.ArgumentParser):
-    """
-    Check to make sure all CLI args are typed, raises error if not
-    """
-    for action in parser._actions:
-        if action.dest != "help" and not action.const:
-            if action.type is None:
-                raise ValueError(f"Argument '{action.dest}' doesn't have a type specified.")
-            else:
-                continue
+from lmms_eval.logging_utils import WandbLogger
+from lmms_eval.tasks import get_task_dict, include_path, initialize_tasks
 
 
 def _handle_non_serializable(o):

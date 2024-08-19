@@ -1,30 +1,15 @@
-# credit to https://github.com/EleutherAI/lm-evaluation-harness
-import collections
-import inspect
-import logging
 import os
-from functools import partial
-from typing import Dict, List, Mapping, Optional, Union
-
-from loguru import logger as eval_logger
-
-from lmms_eval import utils
-from lmms_eval.api.group import ConfigurableGroup, GroupConfig
-from lmms_eval.api.task import ConfigurableTask, Task
-from lmms_eval.evaluator_utils import get_subtask_list
-
-# from lmms_eval import prompts
-from lmms_eval.api.task import TaskConfig, Task, ConfigurableTask
-from lmms_eval.api.registry import (
-    register_task,
-    register_group,
-    TASK_REGISTRY,
-    GROUP_REGISTRY,
-    ALL_TASKS,
-    TASK_INITIALIZED,
-)
+import sys
+from typing import Dict, List, Union
 
 from loguru import logger
+
+from lmms_eval import utils
+from lmms_eval.api.registry import (ALL_TASKS, GROUP_REGISTRY,
+                                    TASK_INITIALIZED, TASK_REGISTRY,
+                                    register_group, register_task)
+# from lmms_eval import prompts
+from lmms_eval.api.task import ConfigurableTask, Task, TaskConfig
 
 eval_logger = logger
 

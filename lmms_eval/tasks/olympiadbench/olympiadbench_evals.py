@@ -1,7 +1,5 @@
 import math
 import re
-import sympy as sp
-import math
 
 import sympy as sp
 from loguru import logger as eval_logger

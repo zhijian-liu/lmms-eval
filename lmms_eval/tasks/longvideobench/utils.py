@@ -15,8 +15,7 @@ from decord import VideoReader, cpu
 from loguru import logger as eval_logger
 from PIL import Image
 
-import json
-from loguru import logger as eval_logger
+from lmms_eval.tasks._task_utils.file_utils import generate_submission_file
 
 
 def timestamp_to_seconds(timestamp):

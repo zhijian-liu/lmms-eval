@@ -1,7 +1,9 @@
 import datetime
-import yaml
 import json
 import os
+from difflib import SequenceMatcher as SM
+from functools import partial
+from pathlib import Path
 
 import evaluate
 import numpy as np
@@ -11,12 +13,7 @@ from loguru import logger as eval_logger
 from nltk.util import ngrams
 from spacy.cli import download
 
-from pathlib import Path
-from difflib import SequenceMatcher as SM
-from functools import partial
-
 from lmms_eval.tasks._task_utils.file_utils import generate_submission_file
-from loguru import logger as eval_logger
 
 with open(Path(__file__).parent / "_default_template_vcr_yaml", "r") as f:
     raw_data = f.readlines()
