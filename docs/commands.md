@@ -85,20 +85,21 @@ import lmms_eval
 my_model = initialize_my_model() # create your model (could be running finetuning with some custom modeling code)
 ...
 # instantiate an LM subclass that takes your initialized model and can run
-# - `Your_LMM.loglikelihood()`
-# - `Your_LMM.generate_until()`
-lmm_obj = Your_LMM(model=my_model, batch_size=16)
+# - `Your_LM.loglikelihood()`
+# - `Your_LM.loglikelihood_rolling()`
+# - `Your_LM.generate_until()`
+lm_obj = Your_LM(model=my_model, batch_size=16)
 
-# indexes all tasks from the `lmms_eval/tasks` subdirectory.
+# indexes all tasks from the `lm_eval/tasks` subdirectory.
 # Alternatively, you can set `TaskManager(include_path="path/to/my/custom/task/configs")`
 # to include a set of tasks in a separate directory.
-task_manager = lmms_eval.tasks.TaskManager()
+task_manager = lm_eval.tasks.TaskManager()
 
 # Setting `task_manager` to the one above is optional and should generally be done
-# if you want to include tasks from paths other than ones in `lmms_eval/tasks`.
+# if you want to include tasks from paths other than ones in `lm_eval/tasks`.
 # `simple_evaluate` will instantiate its own task_manager if it is set to None here.
-results = lmms_eval.simple_evaluate( # call simple_evaluate
-    model=lmm_obj,
+results = lm_eval.simple_evaluate( # call simple_evaluate
+    model=lm_obj,
     tasks=["taskname1", "taskname2"],
     num_fewshot=0,
     task_manager=task_manager,
@@ -113,7 +114,7 @@ Additionally, the `evaluate()` function offers the core evaluation functionality
 As a brief example usage of `evaluate()`:
 
 ```python
-import lmms_eval
+import lm_eval
 
 # suppose you've defined a custom lm_eval.api.Task subclass in your own external codebase
 from my_tasks import MyTask1
@@ -127,16 +128,16 @@ my_model = initialize_my_model()
 # - `Your_LM.loglikelihood()`
 # - `Your_LM.loglikelihood_rolling()`
 # - `Your_LM.generate_until()`
-lmm_obj = Your_LMM(model=my_model, batch_size=16)
+lm_obj = Your_LM(model=my_model, batch_size=16)
 
 # optional: the task_manager indexes tasks including ones
 # specified by the user through `include_path`.
-task_manager = lmms_eval.tasks.TaskManager(
+task_manager = lm_eval.tasks.TaskManager(
     include_path="/path/to/custom/yaml"
     )
 
 # To get a task dict for `evaluate`
-task_dict = lmms_eval.tasks.get_task_dict(
+task_dict = lm_eval.tasks.get_task_dict(
     [
         "mmlu", # A stock task
         "my_custom_task", # A custom task
@@ -156,101 +157,11 @@ task_dict = lmms_eval.tasks.get_task_dict(
     )
 
 results = evaluate(
-    lm=lmm_obj,
+    lm=lm_obj,
     task_dict=task_dict,
     ...
 )
 ```
-
-## Usage with SRT API
-
-> install sglang
-
-```bash
-git clone https://github.com/sgl-project/sglang.git
-cd sglang;
-pip install -e "python[srt]"
-python3 -m pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.3/
-```
-
-> run sglang backend service with the following command
-
-```bash
-
-CKPT_PATH=$1
-TASK=$2
-MODALITY=$3
-TP_SIZE=$4
-echo $TASK
-TASK_SUFFIX="${TASK//,/_}"
-echo $TASK_SUFFIX
-
-python3 -m lmms_eval \
-    --model srt_api \
-    --model_args modality=$MODALITY,model_version=$CKPT_PATH,tp=$TP_SIZE,host=127.0.0.1,port=30000,timeout=600 \
-    --tasks $TASK \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix $TASK_SUFFIX \
-    --output_path ./logs/
-
-```
-
-You may need to install some dependencies for the above command to work (if you encounter some errors).
-
-```bash
-pip install httpx==0.23.3
-pip install protobuf==3.20
-pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.3/
-```
-
-
-## Usage with SRT API
-
-> install sglang
-
-```bash
-git clone https://github.com/sgl-project/sglang.git
-# Current version is tested on #1222
-cd sglang;
-pip install -e "python[srt]"
-
-# Install FlashInfer CUDA kernels
-pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
-```
-
-> run sglang backend service with the following command
-
-```bash
-# After update, there is no need to use an extra command to setup backend server
-# the server will be initialized in the init process
-
-# launch lmms-eval srt_api model
-CKPT_PATH=$1
-TASK=$2
-MODALITY=$3
-TP_SIZE=$4
-echo $TASK
-TASK_SUFFIX="${TASK//,/_}"
-echo $TASK_SUFFIX
-
-python3 -m lmms_eval \
-    --model srt_api \
-    --model_args modality=$MODALITY,model_version=$CKPT_PATH,tp=$TP_SIZE,host=127.0.0.1,port=30000,timeout=600 \
-    --tasks $TASK \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix $TASK_SUFFIX \
-    --output_path ./logs/
-```
-
-You may need to install some dependencies for the above command to work (if you encounter some errors).
-
-```bash
-pip install httpx==0.23.3
-pip install protobuf==3.20
-```
-
 
 ## Usage with SRT API
 
