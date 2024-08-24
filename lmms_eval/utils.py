@@ -2,6 +2,7 @@ import collections
 import datetime
 import fnmatch
 import functools
+import hashlib
 import importlib.util
 import inspect
 import json

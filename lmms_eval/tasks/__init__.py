@@ -1,43 +1,19 @@
+# credit to https://github.com/EleutherAI/lm-evaluation-harness
+import collections
+import inspect
+import logging
 import os
-import sys
-from typing import Dict, List, Union
+from functools import partial
+from typing import Dict, List, Mapping, Optional, Union
 
-from loguru import logger
+from loguru import logger as eval_logger
 
 from lmms_eval import utils
-from lmms_eval.api.registry import (
-    ALL_TASKS,
-    GROUP_REGISTRY,
-    TASK_INITIALIZED,
-    TASK_REGISTRY,
-    register_group,
-    register_task,
-)
+from lmms_eval.api.group import ConfigurableGroup, GroupConfig
+from lmms_eval.api.task import ConfigurableTask, Task
+from lmms_eval.evaluator_utils import get_subtask_list
 
-# from lmms_eval import prompts
-from lmms_eval.api.task import ConfigurableTask, Task, TaskConfig
-
-eval_logger = logger
-
-
-def register_configurable_task(config: Dict[str, str]) -> int:
-    SubClass = type(
-        config["task"] + "ConfigurableTask",
-        (ConfigurableTask,),
-        {"CONFIG": TaskConfig(**config)},
-    )
-
-    if "task" in config:
-        task_name = "{}".format(config["task"])
-        register_task(task_name)(SubClass)
-
-    if "group" in config:
-        if config["group"] == config["task"]:
-            raise ValueError("task and group name cannot be the same")
-        elif type(config["group"]) == str:
-            group_name = [config["group"]]
-        else:
-            group_name = config["group"]
+GROUP_ONLY_KEYS = list(GroupConfig().to_dict().keys())
 
 
 class TaskManager:
@@ -474,7 +450,7 @@ class TaskManager:
                             if attr in config:
                                 if attr == "group" and print_info:
                                     self.logger.debug(
-                                        "`group` and `group_alias` keys in tasks' configs will no longer be used in the next release of lmms-eval. "
+                                        "`group` and `group_alias` keys in tasks' configs will no longer be used in the next release of lm-eval. "
                                         "`tag` will be used to allow to call a collection of tasks just like `group`. "
                                         "`group` will be removed in order to not cause confusion with the new ConfigurableGroup "
                                         "which will be the offical way to create groups with addition of group-wide configuations."
@@ -494,7 +470,7 @@ class TaskManager:
                                             "yaml_path": -1,
                                         }
                                     elif tasks_and_groups[tag]["type"] != "tag":
-                                        self.logger.warning(f"The tag {tag} is already registered as a group, this tag will not be registered. " "This may affect tasks you want to call.")
+                                        self.logger.info(f"The tag {tag} is already registered as a group, this tag will not be registered. " "This may affect tasks you want to call.")
                                         break
                                     else:
                                         tasks_and_groups[tag]["task"].append(task)
@@ -513,41 +489,9 @@ def get_task_name_from_config(task_config: Dict[str, str]) -> str:
         return "{dataset_path}".format(**task_config)
 
 
-def include_task_folder(task_dir: str, register_task: bool = True) -> None:
-    """
-    Calling this function
-    """
-    for root, subdirs, file_list in os.walk(task_dir):
-        # if (subdirs == [] or subdirs == ["__pycache__"]) and (len(file_list) > 0):
-        for f in file_list:
-            # if "detail" in f:
-            #
-            # if "vatex" in f:
-            #     print("a")
-            if f.endswith(".yaml"):
-                yaml_path = os.path.join(root, f)
-                try:
-                    config = utils.load_yaml_config(yaml_path)
-
-                    if "task" not in config:
-                        continue
-
-                    if register_task:
-                        if type(config["task"]) == str:
-                            register_configurable_task(config)
-                    else:
-                        if type(config["task"]) == list:
-                            register_configurable_group(config)
-
-                # Log this silently and show it only when
-                # the user defines the appropriate verbosity.
-                except ModuleNotFoundError as e:
-                    eval_logger.debug(f"{yaml_path}: {e}. Config will not be added to registry.")
-                except Exception as error:
-                    import traceback
-
-                    eval_logger.debug(f"Failed to load config in {yaml_path}. Config will not be added to registry\n" f"Error: {error}\n" f"Traceback: {traceback.format_exc()}")
-    return 0
+def get_task_name_from_object(task_object):
+    if hasattr(task_object, "config"):
+        return task_object._config["task"]
 
     # TODO: scrap this
     # this gives a mechanism for non-registered tasks to have a custom name anyways when reporting
@@ -564,17 +508,7 @@ def _check_duplicates(task_dict: dict) -> List[str]:
     for key, value in task_dict.items():
         subtask_names.extend(value)
 
-def initialize_tasks(verbosity="INFO"):
-    logger.remove()
-    eval_logger.add(sys.stdout, colorize=True, level=verbosity)
-    global TASK_INITIALIZED
-    if TASK_INITIALIZED:
-        eval_logger.info("Tasks already initialized, skipping re-initialization.")
-        return
-    # eval_logger.add(sys.stderr, level=verbosity)
-    task_dir = os.path.dirname(os.path.abspath(__file__)) + "/"
-    include_path(task_dir)
-    TASK_INITIALIZED = True
+    duplicate_tasks = {task_name for task_name in subtask_names if subtask_names.count(task_name) > 1}
 
     # locate the potentially problematic groups that seem to 'compete' for constituent subtasks
     competing_groups = [group for group in task_dict.keys() if len(set(task_dict[group]).intersection(duplicate_tasks)) > 0]

@@ -1167,7 +1167,8 @@ class ConfigurableTask(Task):
                 )
             )
         else:
-            raise TypeError
+            # eval_logger.warning("Note that doc_to_visual was called but not set in config. Please check if this is a text-only task.")
+            return self.config.doc_to_visual
 
     def doc_to_choice(self, doc: Any) -> List[str]:
         if self.config.doc_to_choice is None:

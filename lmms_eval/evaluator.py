@@ -6,6 +6,8 @@ import os
 import random
 import sys
 import time
+from dataclasses import dataclass
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
@@ -16,10 +18,22 @@ from tqdm import tqdm
 import lmms_eval.api
 import lmms_eval.api.metrics
 import lmms_eval.api.registry
-import lmms_eval.models
-import lmms_eval.tasks
+from lmms_eval.evaluator_utils import (
+    consolidate_group_results,
+    consolidate_results,
+    get_sample_size,
+    get_subtask_list,
+    get_task_list,
+    prepare_print_tasks,
+    print_writeout,
+    run_task_tests,
+)
+from lmms_eval.loggers.evaluation_tracker import EvaluationTracker
+from lmms_eval.models import get_model
+from lmms_eval.tasks import TaskManager, get_task_dict
 from lmms_eval.utils import (
     create_iterator,
+    get_datetime_str,
     get_git_commit_hash,
     make_table,
     positional_deprecated,
@@ -356,7 +370,6 @@ def evaluate(
     for task_output in eval_tasks:
         task: Task = task_output.task
         task_name = task_output.task_name
-        task.args = cli_args
 
         name_to_task[task_name] = task
 
@@ -440,16 +453,15 @@ def evaluate(
         if lm.world_size > 1:
             lm.accelerator.wait_for_everyone()
 
-    RANK = lm.rank
-    WORLD_SIZE = lm.world_size
+    ### Collect values of metrics on all datapoints ###
+    metrics_info = collections.defaultdict(list)
     ### Postprocess outputs ###
     # TODO: del model here, maybe (idea: allow user to specify device of e.g. reward model separately)
     for task_output in eval_tasks:
         task = task_output.task
+        task_name = task_output.task_name
         task.apply_filters()
 
-        ### Collect values of metrics on all datapoints ###
-        # # unpack results and sort back in order and return control to Task
         # TODO: make it possible to use a different metric per filter
         # Pre-process task.instances to group by doc_id
         instances_by_doc_id = collections.defaultdict(list)
@@ -519,9 +531,14 @@ def evaluate(
                         "target_hash": hash_string(str(target)),
                     }
                     example.update(metrics)
-                    task_output.logged_samples.append(example)
+                    samples[task_name].append(example)
+
                 for metric, value in metrics.items():
-                    task_output.sample_metrics[(metric, filter_key)].append(value)
+                    metrics_info[(task_name, key, metric)].append(value)
+
+                pbar.update(1)
+
+            pbar.close()
 
     if WORLD_SIZE > 1:
         # if multigpu, then gather data across all ranks to rank 0
@@ -531,8 +548,8 @@ def evaluate(
             torch.distributed.all_gather_object(full_samples, task_samples)
             samples[task_name] = list(itertools.chain.from_iterable(full_samples))
         # then collect metrics across all ranks
-        vals_torch = collections.defaultdict(list)
-        for (task_name, key, metric), items in vals.items():
+        metrics_info_torch = collections.defaultdict(list)
+        for (task_name, key, metric), items in metrics_info.items():
             numitem = 0
             if type(items[0]) == tuple:
                 numitem = len(items[0])
@@ -564,11 +581,12 @@ def evaluate(
                     gathered_item = [tuple(g) for g in gathered_item]
 
             if lm.rank == 0:
-                vals_torch[(task_name, key, metric)] = gathered_item
+                metrics_info_torch[(task_name, key, metric)] = gathered_item
 
-        vals = vals_torch
+        metrics_info = metrics_info_torch
         # Ensure all ranks wait for rank 0 to finish aggregation
         torch.distributed.barrier()
+        lm.accelerator.wait_for_everyone()
 
     # Synchronize processes with a temp file in case the evluation metric requires gpus
     # TODO: fix barriers' taking up gpu computation
@@ -609,18 +627,42 @@ def evaluate(
     if RANK == 0:
         ### Aggregate results over all datapoints ###
         # aggregate results ; run bootstrap CIs
-        for task_output in eval_tasks:
-            task_output.calculate_aggregate_metric(bootstrap_iters=bootstrap_iters)
-        (
-            results,
-            samples,
-            configs,
-            versions,
-            num_fewshot,
-            higher_is_better,
-        ) = consolidate_results(eval_tasks)
+        for (task_name, key, metric), items in metrics_info.items():
+            task = name_to_task[task_name]
+            metric_key = metric + "," + key
 
-        ### Calculate group metrics ###
+            if type(task) == tuple:
+                group_name, task = task
+            else:
+                group_name = None
+
+            if metric not in task.aggregation():
+                continue
+
+            agg_fn = task.aggregation()[metric]
+
+            # Bo: for models that need to know the args to save to correct path
+            if inspect.getfullargspec(agg_fn).args == ["results", "args"]:
+                results[task_name][metric_key] = agg_fn(items, cli_args)
+            else:
+                # Bo: for models only need agg items
+                results[task_name][metric_key] = agg_fn(items)
+
+            results[task_name]["samples"] = len(items)
+
+            # hotfix: bleu, chrf, ter seem to be really expensive to bootstrap
+            # so we run them less iterations. still looking for a cleaner way to do this
+            if bootstrap_iters > 0:
+                stderr = lmms_eval.api.metrics.stderr_for_metric(
+                    metric=task.aggregation()[metric],
+                    bootstrap_iters=min(bootstrap_iters, 100) if metric in ["bleu", "chrf", "ter"] else bootstrap_iters,
+                )
+
+                if stderr is not None and len(items) > 1:
+                    results[task_name][metric + "_stderr" + "," + key] = stderr(items)
+                else:
+                    results[task_name][metric + "_stderr" + "," + key] = "N/A"
+
         if bool(results):
             results, versions, show_group_table, *_ = consolidate_group_results(results, versions, task_dict)
 
@@ -672,4 +714,15 @@ def evaluate(
     while len([file for file in os.listdir(cli_args.output_path) if file.endswith("metric_eval_done.txt")]) < lm._world_size:
         time.sleep(1)
 
+    lm.accelerator.wait_for_everyone()
     return results_dict
+
+
+def request_caching_arg_to_dict(cache_requests: str) -> dict:
+    request_caching_args = {
+        "cache_requests": cache_requests in {"true", "refresh"},
+        "rewrite_requests_cache": cache_requests == "refresh",
+        "delete_requests_cache": cache_requests == "delete",
+    }
+
+    return request_caching_args

@@ -21,17 +21,13 @@ AVAILABLE_MODELS = {
     "instructblip": "InstructBLIP",
     "internvl": "InternVLChat",
     "internvl2": "InternVL2",
-    "gemini_api": "GeminiAPI",
-    "reka": "Reka",
-    "from_log": "FromLog",
-    "mplug_owl_video": "mplug_Owl",
-    "phi3v": "Phi3v",
-    "tinyllava": "TinyLlava",
-    "llava_onevision": "LlavaOneVision",
+    "llama_vid": "LLaMAVid",
+    "llava": "Llava",
     "llava_hf": "LlavaHf",
-    "srt_api": "SRT_API",
+    "llava_onevision": "Llava_OneVision",
+    "llava_sglang": "LlavaSglang",
+    "llava_vid": "LlavaVid",
     "longva": "LongVA",
-    "mantis": "Mantis",
     "minicpm_v": "MiniCPM_V",
     "mplug_owl_video": "mplug_Owl",
     "phi3v": "Phi3v",
@@ -43,6 +39,7 @@ AVAILABLE_MODELS = {
     "videoChatGPT": "VideoChatGPT",
     "video_llava": "VideoLLaVA",
     "vila": "VILA",
+    "xcomposer2_4KHD": "XComposer2_4KHD",
     "xcomposer2d5": "XComposer2D5",
 }
 
@@ -53,9 +50,12 @@ def get_model(model_name):
 
     model_class = AVAILABLE_MODELS[model_name]
     try:
-        exec(f"from .{model_name} import {model_class}")
+        module = __import__(f"lmms_eval.models.{model_name}", fromlist=[model_class])
+        return getattr(module, model_class)
     except Exception as e:
-        logger.debug(f"Failed to import {model_class} from {model_name}: {e}")
+        logger.error(f"Failed to import {model_class} from {model_name}: {e}")
+        raise
+
 
 if os.environ.get("LMMS_EVAL_PLUGINS", None):
     # Allow specifying other packages to import models from
