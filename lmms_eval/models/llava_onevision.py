@@ -176,7 +176,8 @@ class Llava_OneVision(lmms):
             self.accelerator = accelerator
             if self.accelerator.is_local_main_process:
                 eval_logger.info(f"Using {accelerator.num_processes} devices with data parallelism")
-            self._rank = self.accelerator.local_process_index
+            self._rank = self.accelerator.process_index
+            # print(self.accelerator.local_process_index)
             self._world_size = self.accelerator.num_processes
 
         elif accelerator.num_processes == 1 and device_map == "auto":
@@ -447,11 +448,12 @@ class Llava_OneVision(lmms):
                         placeholder_count = 1
 
                     elif type(visual[0]) == PIL.Image.Image:  # For image, multi-image tasks
-                        image_tensor = process_images(visual, self._image_processor, self._config)
-                        if type(image_tensor) is list:
-                            image_tensor = [_image.to(dtype=torch.float16, device=self.device) for _image in image_tensor]
-                        else:
-                            image_tensor = image_tensor.to(dtype=torch.float16, device=self.device)
+                        # image_tensor = process_images(visual, self._image_processor, self._config)
+                        # if type(image_tensor) is list:
+                        #     image_tensor = [_image.to(dtype=torch.float16, device=self.device) for _image in image_tensor]
+                        # else:
+                        #     image_tensor = image_tensor.to(dtype=torch.float16, device=self.device)
+                        image_tensor=None
 
                         task_type = "image"
                         placeholder_count = len(visual) if isinstance(visual, list) else 1
@@ -537,7 +539,7 @@ class Llava_OneVision(lmms):
                 keywords = [stop_str]
                 stopping_criteria = KeywordsStoppingCriteria(keywords, self.tokenizer, input_ids)
                 gen_kwargs["modalities"] = ["video"]
-                gen_kwargs["stopping_criteria"] = [stopping_criteria]
+                # gen_kwargs["stopping_criteria"] = [stopping_criteria]
                 self._config.mm_spatial_pool_stride = self.mm_spatial_pool_stride
                 self._config.mm_spatial_pool_mode = self.mm_spatial_pool_mode
 
@@ -546,11 +548,12 @@ class Llava_OneVision(lmms):
             if "image_aspect_ratio" in gen_kwargs.keys():
                 gen_kwargs.pop("image_aspect_ratio")
             try:
-                with torch.inference_mode():
-                    cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
-                    # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                # with torch.inference_mode():
+                #     cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                #     # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
 
-                text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)
+                # text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)
+                text_outputs="hi"
             except Exception as e:
                 raise e
 
