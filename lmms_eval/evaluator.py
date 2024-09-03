@@ -44,6 +44,7 @@ from lmms_eval.utils import (
 
 @positional_deprecated
 def simple_evaluate(
+    tuned_model,
     model,
     model_args: Optional[Union[str, dict]] = None,
     tasks: Optional[List[Union[str, dict, object]]] = None,
@@ -250,7 +251,7 @@ def simple_evaluate(
         verbosity=verbosity,
         cli_args=cli_args,
     )
-
+    print(lm.rank)
     if lm.rank == 0:
         if isinstance(model, str):
             model_name = model
@@ -594,6 +595,10 @@ def evaluate(
     if os.path.exists(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt"):
         os.remove(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt")
 
+
+    if not cli_args.output_path.exists():
+        cli_args.output_path.mkdir(parents=True, exist_ok=True)
+        
     if lm.rank == 0:
         ### Get task ordering for correct sample-wide aggregation
         group_to_task = {}
@@ -706,16 +711,22 @@ def evaluate(
         }
         if log_samples:
             results_dict["samples"] = dict(samples)
+            
+        with open(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt", "w") as f:
+            f.write(f"rank {int(os.environ.get('RANK', 0))} eval done")
+        return results_dict
+    
     else:
         results_dict = None
+
 
     with open(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt", "w") as f:
         f.write(f"rank {int(os.environ.get('RANK', 0))} eval done")
     while len([file for file in os.listdir(cli_args.output_path) if file.endswith("metric_eval_done.txt")]) < lm._world_size:
         time.sleep(1)
-
-    lm.accelerator.wait_for_everyone()
-    return results_dict
+    
+    else:
+        return None
 
 
 def request_caching_arg_to_dict(cache_requests: str) -> dict:
