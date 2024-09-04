@@ -45,6 +45,7 @@ from lmms_eval.utils import (
 @positional_deprecated
 def simple_evaluate(
     tuned_model,
+    tuned_model_tokenizer,
     model,
     model_args: Optional[Union[str, dict]] = None,
     tasks: Optional[List[Union[str, dict, object]]] = None,
@@ -163,6 +164,8 @@ def simple_evaluate(
 
     ModelClass = get_model(model)
     lm = ModelClass.create_from_arg_string(
+        tuned_model,
+        tuned_model_tokenizer,
         model_args,
         {
             "batch_size": batch_size,
@@ -251,7 +254,7 @@ def simple_evaluate(
         verbosity=verbosity,
         cli_args=cli_args,
     )
-    print(lm.rank)
+    # print(lm.rank)
     if lm.rank == 0:
         if isinstance(model, str):
             model_name = model

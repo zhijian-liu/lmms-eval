@@ -23,6 +23,7 @@ from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
 from lmms_eval.models.model_utils.load_video import read_video_pyav
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -85,6 +86,8 @@ class Llava_OneVision(lmms):
         mm_spatial_pool_mode: Optional[str] = "bilinear",
         token_strategy: Optional[str] = "single",  # could be "single" or "multiple", "multiple" denotes adding multiple <image> tokens for each frame
         video_decode_backend: str = "decord",
+        tuned_model:Optional[Any]=None,
+        tuned_model_tokenizer:Optional[Any]=None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -139,13 +142,29 @@ class Llava_OneVision(lmms):
                 overwrite_config["tokenizer_model_max_length"] = 4096 * scaling_factor
 
         llava_model_args["overwrite_config"] = overwrite_config
-        try:
-            # Try to load the model with the multimodal argument
-            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
-        except TypeError:
-            # for older versions of LLaVA that don't have multimodal argument
-            llava_model_args.pop("multimodal", None)
-            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
+        
+        if tuned_model:
+            self._model=tuned_model
+            self._image_processor=tuned_model.get_vision_tower().image_processor
+            self._tokenizer=tuned_model_tokenizer
+            if hasattr(tuned_model.config, "max_sequence_length"):
+                context_len = tuned_model.config.max_sequence_length
+            elif hasattr(tuned_model.config, "max_position_embeddings"):
+                context_len = tuned_model.config.max_position_embeddings
+            elif hasattr(tuned_model.config, "tokenizer_model_max_length"):
+                context_len = tuned_model.config.tokenizer_model_max_length
+            else:
+                context_len = 2048
+            self._max_length=context_len
+        else:
+            
+            try:
+                # Try to load the model with the multimodal argument
+                self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
+            except TypeError:
+                # for older versions of LLaVA that don't have multimodal argument
+                llava_model_args.pop("multimodal", None)
+                self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
 
         self._config = self._model.config
         self.model.eval()
@@ -448,12 +467,11 @@ class Llava_OneVision(lmms):
                         placeholder_count = 1
 
                     elif type(visual[0]) == PIL.Image.Image:  # For image, multi-image tasks
-                        # image_tensor = process_images(visual, self._image_processor, self._config)
-                        # if type(image_tensor) is list:
-                        #     image_tensor = [_image.to(dtype=torch.float16, device=self.device) for _image in image_tensor]
-                        # else:
-                        #     image_tensor = image_tensor.to(dtype=torch.float16, device=self.device)
-                        image_tensor=None
+                        image_tensor = process_images(visual, self._image_processor, self._config)
+                        if type(image_tensor) is list:
+                            image_tensor = [_image.to(dtype=torch.float16, device=self.device) for _image in image_tensor]
+                        else:
+                            image_tensor = image_tensor.to(dtype=torch.float16, device=self.device)
 
                         task_type = "image"
                         placeholder_count = len(visual) if isinstance(visual, list) else 1
@@ -548,12 +566,11 @@ class Llava_OneVision(lmms):
             if "image_aspect_ratio" in gen_kwargs.keys():
                 gen_kwargs.pop("image_aspect_ratio")
             try:
-                # with torch.inference_mode():
-                #     cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
-                #     # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                with torch.inference_mode():
+                    cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                    # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
 
-                # text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)
-                text_outputs="hi"
+                text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)
             except Exception as e:
                 raise e
 
