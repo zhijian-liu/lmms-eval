@@ -176,7 +176,8 @@ class Llava_OneVision(lmms):
             self.accelerator = accelerator
             if self.accelerator.is_local_main_process:
                 eval_logger.info(f"Using {accelerator.num_processes} devices with data parallelism")
-            self._rank = self.accelerator.local_process_index
+            self._rank = self.accelerator.process_index
+            # print(self.accelerator.local_process_index)
             self._world_size = self.accelerator.num_processes
 
         elif accelerator.num_processes == 1 and device_map == "auto":
@@ -537,7 +538,7 @@ class Llava_OneVision(lmms):
                 keywords = [stop_str]
                 stopping_criteria = KeywordsStoppingCriteria(keywords, self.tokenizer, input_ids)
                 gen_kwargs["modalities"] = ["video"]
-                gen_kwargs["stopping_criteria"] = [stopping_criteria]
+                # gen_kwargs["stopping_criteria"] = [stopping_criteria]
                 self._config.mm_spatial_pool_stride = self.mm_spatial_pool_stride
                 self._config.mm_spatial_pool_mode = self.mm_spatial_pool_mode
 
