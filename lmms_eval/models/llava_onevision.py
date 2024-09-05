@@ -5,7 +5,7 @@ import math
 import re
 import warnings
 from datetime import timedelta
-from typing import List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import PIL
@@ -23,7 +23,6 @@ from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
 from lmms_eval.models.model_utils.load_video import read_video_pyav
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -86,8 +85,8 @@ class Llava_OneVision(lmms):
         mm_spatial_pool_mode: Optional[str] = "bilinear",
         token_strategy: Optional[str] = "single",  # could be "single" or "multiple", "multiple" denotes adding multiple <image> tokens for each frame
         video_decode_backend: str = "decord",
-        tuned_model:Optional[Any]=None,
-        tuned_model_tokenizer:Optional[Any]=None,
+        tuned_model: Optional[Any] = None,
+        tuned_model_tokenizer: Optional[Any] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -127,26 +126,27 @@ class Llava_OneVision(lmms):
         overwrite_config = {}
         overwrite_config["mm_spatial_pool_stride"] = self.mm_spatial_pool_stride
         overwrite_config["mm_spatial_pool_mode"] = self.mm_spatial_pool_mode
-        cfg_pretrained = AutoConfig.from_pretrained(self.pretrained)
+        if tuned_model is None and tuned_model_tokenizer is None:
+            cfg_pretrained = AutoConfig.from_pretrained(self.pretrained)
 
-        if cfg_pretrained.architectures[0] == "LlavaLlamaForCausalLM":  # Ugly code, only used in  vicuna that needs ROPE
-            if "224" in cfg_pretrained.mm_vision_tower:
-                least_token_number = self.max_frames_num * (16 // self.mm_spatial_pool_stride) ** 2 + 1000
-            else:
-                least_token_number = self.max_frames_num * (24 // self.mm_spatial_pool_stride) ** 2 + 1000
+            if cfg_pretrained.architectures[0] == "LlavaLlamaForCausalLM":  # Ugly code, only used in  vicuna that needs ROPE
+                if "224" in cfg_pretrained.mm_vision_tower:
+                    least_token_number = self.max_frames_num * (16 // self.mm_spatial_pool_stride) ** 2 + 1000
+                else:
+                    least_token_number = self.max_frames_num * (24 // self.mm_spatial_pool_stride) ** 2 + 1000
 
-            scaling_factor = math.ceil(least_token_number / 4096)
-            if scaling_factor >= 2:
-                overwrite_config["rope_scaling"] = {"factor": float(scaling_factor), "type": "linear"}
-                overwrite_config["max_sequence_length"] = 4096 * scaling_factor
-                overwrite_config["tokenizer_model_max_length"] = 4096 * scaling_factor
+                scaling_factor = math.ceil(least_token_number / 4096)
+                if scaling_factor >= 2:
+                    overwrite_config["rope_scaling"] = {"factor": float(scaling_factor), "type": "linear"}
+                    overwrite_config["max_sequence_length"] = 4096 * scaling_factor
+                    overwrite_config["tokenizer_model_max_length"] = 4096 * scaling_factor
 
         llava_model_args["overwrite_config"] = overwrite_config
-        
+
         if tuned_model:
-            self._model=tuned_model
-            self._image_processor=tuned_model.get_vision_tower().image_processor
-            self._tokenizer=tuned_model_tokenizer
+            self._model = tuned_model
+            self._image_processor = tuned_model.get_vision_tower().image_processor
+            self._tokenizer = tuned_model_tokenizer
             if hasattr(tuned_model.config, "max_sequence_length"):
                 context_len = tuned_model.config.max_sequence_length
             elif hasattr(tuned_model.config, "max_position_embeddings"):
@@ -155,9 +155,11 @@ class Llava_OneVision(lmms):
                 context_len = tuned_model.config.tokenizer_model_max_length
             else:
                 context_len = 2048
-            self._max_length=context_len
+            self._max_length = context_len
+            self.dtype = torch.bfloat16
         else:
-            
+            self.dtype = torch.float16
+
             try:
                 # Try to load the model with the multimodal argument
                 self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
@@ -459,9 +461,9 @@ class Llava_OneVision(lmms):
 
                         image_tensor = process_images(visual, self._image_processor, self._config)
                         if type(image_tensor) is list:
-                            image_tensor = [_image.to(dtype=torch.float16, device=self.device) for _image in image_tensor]
+                            image_tensor = [_image.to(dtype=self.dtype, device=self.device) for _image in image_tensor]
                         else:
-                            image_tensor = image_tensor.to(dtype=torch.float16, device=self.device)
+                            image_tensor = image_tensor.to(dtype=self.dtype, device=self.device)
 
                         task_type = "video"
                         placeholder_count = 1
@@ -469,9 +471,9 @@ class Llava_OneVision(lmms):
                     elif type(visual[0]) == PIL.Image.Image:  # For image, multi-image tasks
                         image_tensor = process_images(visual, self._image_processor, self._config)
                         if type(image_tensor) is list:
-                            image_tensor = [_image.to(dtype=torch.float16, device=self.device) for _image in image_tensor]
+                            image_tensor = [_image.to(dtype=self.dtype, device=self.device) for _image in image_tensor]
                         else:
-                            image_tensor = image_tensor.to(dtype=torch.float16, device=self.device)
+                            image_tensor = image_tensor.to(dtype=self.dtype, device=self.device)
 
                         task_type = "image"
                         placeholder_count = len(visual) if isinstance(visual, list) else 1
@@ -483,7 +485,7 @@ class Llava_OneVision(lmms):
                                 frames = self.load_video(visual, self.max_frames_num)
                             elif self.video_decode_backend == "pyav":
                                 frames = read_video_pyav(visual[0], num_frm=self.max_frames_num)
-                            frames = self._image_processor.preprocess(frames, return_tensors="pt")["pixel_values"].half().cuda()
+                            frames = self._image_processor.preprocess(frames, return_tensors="pt")["pixel_values"].to(dtype=self.dtype, device=self.device)
                             image_tensor.append(frames)
                         except Exception as e:
                             eval_logger.error(f"Error {e} in loading video")
