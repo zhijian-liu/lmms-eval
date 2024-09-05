@@ -5,7 +5,7 @@ import math
 import re
 import warnings
 from datetime import timedelta
-from typing import List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import PIL
@@ -85,6 +85,8 @@ class Llava_OneVision(lmms):
         mm_spatial_pool_mode: Optional[str] = "bilinear",
         token_strategy: Optional[str] = "single",  # could be "single" or "multiple", "multiple" denotes adding multiple <image> tokens for each frame
         video_decode_backend: str = "decord",
+        tuned_model: Optional[Any] = None,
+        tuned_model_tokenizer: Optional[Any] = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -124,28 +126,44 @@ class Llava_OneVision(lmms):
         overwrite_config = {}
         overwrite_config["mm_spatial_pool_stride"] = self.mm_spatial_pool_stride
         overwrite_config["mm_spatial_pool_mode"] = self.mm_spatial_pool_mode
-        cfg_pretrained = AutoConfig.from_pretrained(self.pretrained)
+        if tuned_model is None and tuned_model_tokenizer is None:
+            cfg_pretrained = AutoConfig.from_pretrained(self.pretrained)
 
-        if cfg_pretrained.architectures[0] == "LlavaLlamaForCausalLM":  # Ugly code, only used in  vicuna that needs ROPE
-            if "224" in cfg_pretrained.mm_vision_tower:
-                least_token_number = self.max_frames_num * (16 // self.mm_spatial_pool_stride) ** 2 + 1000
-            else:
-                least_token_number = self.max_frames_num * (24 // self.mm_spatial_pool_stride) ** 2 + 1000
+            if cfg_pretrained.architectures[0] == "LlavaLlamaForCausalLM":  # Ugly code, only used in  vicuna that needs ROPE
+                if "224" in cfg_pretrained.mm_vision_tower:
+                    least_token_number = self.max_frames_num * (16 // self.mm_spatial_pool_stride) ** 2 + 1000
+                else:
+                    least_token_number = self.max_frames_num * (24 // self.mm_spatial_pool_stride) ** 2 + 1000
 
-            scaling_factor = math.ceil(least_token_number / 4096)
-            if scaling_factor >= 2:
-                overwrite_config["rope_scaling"] = {"factor": float(scaling_factor), "type": "linear"}
-                overwrite_config["max_sequence_length"] = 4096 * scaling_factor
-                overwrite_config["tokenizer_model_max_length"] = 4096 * scaling_factor
+                scaling_factor = math.ceil(least_token_number / 4096)
+                if scaling_factor >= 2:
+                    overwrite_config["rope_scaling"] = {"factor": float(scaling_factor), "type": "linear"}
+                    overwrite_config["max_sequence_length"] = 4096 * scaling_factor
+                    overwrite_config["tokenizer_model_max_length"] = 4096 * scaling_factor
 
         llava_model_args["overwrite_config"] = overwrite_config
-        try:
-            # Try to load the model with the multimodal argument
-            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
-        except TypeError:
-            # for older versions of LLaVA that don't have multimodal argument
-            llava_model_args.pop("multimodal", None)
-            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
+
+        if tuned_model:
+            self._model = tuned_model
+            self._image_processor = tuned_model.get_vision_tower().image_processor
+            self._tokenizer = tuned_model_tokenizer
+            if hasattr(tuned_model.config, "max_sequence_length"):
+                context_len = tuned_model.config.max_sequence_length
+            elif hasattr(tuned_model.config, "max_position_embeddings"):
+                context_len = tuned_model.config.max_position_embeddings
+            elif hasattr(tuned_model.config, "tokenizer_model_max_length"):
+                context_len = tuned_model.config.tokenizer_model_max_length
+            else:
+                context_len = 2048
+            self._max_length = context_len
+        else:
+            try:
+                # Try to load the model with the multimodal argument
+                self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
+            except TypeError:
+                # for older versions of LLaVA that don't have multimodal argument
+                llava_model_args.pop("multimodal", None)
+                self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
 
         self._config = self._model.config
         self.model.eval()
