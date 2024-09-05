@@ -75,6 +75,7 @@ def simple_evaluate(
     torch_random_seed: int = 1234,
     fewshot_random_seed: int = 1234,
     cli_args=None,
+    **kwargs,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -162,13 +163,21 @@ def simple_evaluate(
     if model_args is None:
         model_args = ""
 
+    additional_config = {
+        "batch_size": batch_size,
+        "device": device,
+    }
+
+    if "tuned_model" in kwargs:
+        additional_config["tuned_model"] = kwargs["tuned_model"]
+
+    if "tuned_model_tokenizer" in kwargs:
+        additional_config["tuned_model_tokenizer"] = kwargs["tuned_model_tokenizer"]
+
     ModelClass = get_model(model)
     lm = ModelClass.create_from_arg_string(
         model_args,
-        {
-            "batch_size": batch_size,
-            "device": device,
-        },
+        additional_config,
     )
 
     if task_manager is None:
