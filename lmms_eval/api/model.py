@@ -74,7 +74,7 @@ class lmms(abc.ABC):
         pass
 
     @classmethod
-    def create_from_arg_string(cls: Type[T],tuned_model,tuned_model_tokenizer, arg_string: str, additional_config: Optional[dict] = None) -> T:
+    def create_from_arg_string(cls: Type[T], arg_string: str, additional_config: Optional[dict] = None) -> T:
         """
         Creates an instance of the LMM class using the given argument string and additional config.
 
@@ -88,7 +88,7 @@ class lmms(abc.ABC):
         additional_config = {} if additional_config is None else additional_config
         args = utils.simple_parse_args_string(arg_string)
         args2 = {k: v for k, v in additional_config.items() if v is not None}
-        return cls(tuned_model=tuned_model,tuned_model_tokenizer=tuned_model_tokenizer,**args, **args2)
+        return cls(**args, **args2)
 
     @property
     def rank(self):
