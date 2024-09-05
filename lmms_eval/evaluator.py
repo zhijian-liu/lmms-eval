@@ -44,8 +44,6 @@ from lmms_eval.utils import (
 
 @positional_deprecated
 def simple_evaluate(
-    tuned_model,
-    tuned_model_tokenizer,
     model,
     model_args: Optional[Union[str, dict]] = None,
     tasks: Optional[List[Union[str, dict, object]]] = None,
@@ -75,6 +73,7 @@ def simple_evaluate(
     torch_random_seed: int = 1234,
     fewshot_random_seed: int = 1234,
     cli_args=None,
+    **kwargs,
 ):
     """Instantiate and evaluate a model on a list of tasks.
 
@@ -163,15 +162,16 @@ def simple_evaluate(
         model_args = ""
 
     ModelClass = get_model(model)
-    lm = ModelClass.create_from_arg_string(
-        tuned_model,
-        tuned_model_tokenizer,
-        model_args,
-        {
-            "batch_size": batch_size,
-            "device": device,
-        },
-    )
+    additional_config = {
+        "batch_size": batch_size,
+        "device": device,
+    }
+
+    if "tuned_model" in kwargs and "tuned_model_tokenizer" in kwargs:
+        additional_config["tuned_model"] = kwargs["tuned_model"]
+        additional_config["tuned_model_tokenizer"] = kwargs["tuned_model_tokenizer"]
+
+    lm = ModelClass.create_from_arg_string(model_args, additional_config)
 
     if task_manager is None:
         task_manager = TaskManager(verbosity, model_name=model)
@@ -598,10 +598,9 @@ def evaluate(
     if os.path.exists(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt"):
         os.remove(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt")
 
-
     if not cli_args.output_path.exists():
         cli_args.output_path.mkdir(parents=True, exist_ok=True)
-        
+
     if lm.rank == 0:
         ### Get task ordering for correct sample-wide aggregation
         group_to_task = {}
@@ -714,20 +713,19 @@ def evaluate(
         }
         if log_samples:
             results_dict["samples"] = dict(samples)
-            
+
         with open(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt", "w") as f:
             f.write(f"rank {int(os.environ.get('RANK', 0))} eval done")
         return results_dict
-    
+
     else:
         results_dict = None
-
 
     with open(f"{cli_args.output_path}/rank{int(os.environ.get('RANK', 0))}_metric_eval_done.txt", "w") as f:
         f.write(f"rank {int(os.environ.get('RANK', 0))} eval done")
     while len([file for file in os.listdir(cli_args.output_path) if file.endswith("metric_eval_done.txt")]) < lm._world_size:
         time.sleep(1)
-    
+
     else:
         return None
 
