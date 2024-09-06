@@ -95,7 +95,6 @@ all = [
     "vila",
     "gemini",
     "reka",
-    "metrics",
 ]
 
 [tool.setuptools.packages.find]
