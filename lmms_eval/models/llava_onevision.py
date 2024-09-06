@@ -23,7 +23,8 @@ from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
 from lmms_eval.models.model_utils.load_video import read_video_pyav
-
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from trl.models.utils import unwrap_model_for_generation
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -567,12 +568,20 @@ class Llava_OneVision(lmms):
             # TODO: attention to this major generation step...
             if "image_aspect_ratio" in gen_kwargs.keys():
                 gen_kwargs.pop("image_aspect_ratio")
+            
+            
             try:
                 with torch.inference_mode():
-                    cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                    with unwrap_model_for_generation(self._model,self.accelerator) as unwrapped_model:
+                        cont = unwrapped_model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                    
+                    
+                    # cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                    
                     # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
 
                 text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)
+                self.accelerator.wait_for_everyone()
             except Exception as e:
                 raise e
 
