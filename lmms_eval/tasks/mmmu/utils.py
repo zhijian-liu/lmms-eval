@@ -14,6 +14,7 @@ from lmms_eval.tasks._task_utils.file_utils import generate_submission_file
 
 MULTI_CHOICE_PROMPT = "Answer with the option's letter from the given choices directly."
 OPEN_ENDED_PROMPT = "Answer the question using a single word or phrase."
+COT_PROMPT = "Now let's think step by step to explain the answer and each step shall be separated by '#####' at the beginning. In the last line, answer the question using a single word or phrase."
 
 with open(Path(__file__).parent / "_default_template_yaml", "r") as f:
     raw_data = f.readlines()
@@ -47,9 +48,9 @@ def construct_prompt(doc):
         # Weirdly, data["options"] is a string in MMMU Huggingface dataset
         parsed_options = parse_options(ast.literal_eval(doc["options"]))
         # parsed_options already prepends a newline so no need to add space here
-        question = f"{question}\n{parsed_options}\n\n{MULTI_CHOICE_PROMPT}"
+        question = f"{question}\n{parsed_options}\n\n{MULTI_CHOICE_PROMPT} {COT_PROMPT}"
     else:
-        question = f"{question}\n\n{OPEN_ENDED_PROMPT}"
+        question = f"{question}\n\n{OPEN_ENDED_PROMPT} {COT_PROMPT}"
     return question
 
 
